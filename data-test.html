@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Data Viewer</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/daterangepicker/daterangepicker.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/jsoneditor/dist/jsoneditor.min.css"
+    />
+
+    <style>
+      body {
+        background: #F5F6FA;
+      }
+      .title-text{
+        font-family: Arial, sans-serif;
+        color: #182F44;
+      }
+      .data-box {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 20px;
+        margin: 20px;
+        background-color: #ffffff;
+        box-shadow: 0 3px 10px rgb(0 0 0 / 0.2);
+      }
+
+      .title-text {
+        text-align: center;
+      }
+
+      form {
+        gap: 10px;
+      }
+
+      .data-box {
+        height: 80vh;
+        padding: 20px;
+        border: 1px solid grey;
+        font-size: 18px;
+      }
+
+      iframe{
+        border: 1px solid grey;
+      }
+
+      iframe,
+      .json-editor-container {
+        width: 100%;
+        height: 80vh;
+      }
+      .btn {
+        border-radius: 4px;
+        background-color: #4caf50; /* Green */
+        border: none;
+        color: white;
+        padding: 6px 12px;
+        text-align: center;
+        text-decoration: none;
+        display: inline-block;
+        font-size: 16px;
+      }
+      .disable {
+        display: none;
+      }
+      .bold{
+        font-weight: 600;
+      }
+    </style>
+  </head>
+
+  <body>
+    <h1 class="title-text bold">Vehicle Data Test</h1>
+    <div class="data-box">
+      <form>
+        <label class="bold" for="env">Select Environment:</label>
+        <br /><br />
+        <input type="radio" id="dev" name="env" value="dev" />
+        <label for="dev">Dev</label><br />
+        <input type="radio" id="prod" name="env" value="production" checked />
+        <label for="prod">Production</label><br />
+        <input type="radio" id="staging" name="env" value="staging" />
+        <label for="staging">Staging</label><br /><br />
+
+        <label class="bold" for="deviceID">Device ID/IMEI:</label>
+        <br /><br />
+        <input type="text" id="deviceID" name="deviceID" required /><br /><br />
+
+        <label class="bold" id="options" for="options">Options:</label>
+        <br /><br />
+        <input
+          type="radio"
+          id="processedLatest"
+          name="options"
+          value="processedLatest"
+          checked
+        />
+        <label for="processedLatest">Formatted Latest</label><br />
+        <input
+          type="radio"
+          id="processedRaw"
+          name="options"
+          value="processed"
+        />
+        <label for="processedRaw">Formatted</label><br />
+        <input type="radio" id="raw" name="options" value="raw" />
+        <label for="raw">Raw</label> <br /><br />
+        <div id="decode-wrapper" class="disable">
+          <label class="bold" for="decode">Decode:</label>
+          <input
+            type="checkbox"
+            id="decode"
+            name="decode"
+            value="true"
+          /><br /><br />
+        </div>
+
+        <div id="date-picker" class="disable">
+          <label for="startTime">Start Time:</label>
+          <input
+            type="text"
+            id="startTime"
+            name="startTime"
+            required
+          /><br /><br />
+
+          <label for="endTime">End Time:</label>
+          <input type="text" id="endTime" name="endTime" required /><br /><br />
+        </div>
+
+        <div id="showLocTime-wrapper" class="">
+          <label class="bold" for="showLocTime">Show Local Time:</label>
+          <input
+            type="checkbox"
+            id="showLocTime"
+            name="showLocTime"
+            checked
+          /><br /><br />
+        </div>
+
+        <button class="btn" type="button" id="showDataBtn">Show Data</button>
+      </form>
+      <div>
+        <iframe> </iframe>
+      </div>
+      <div class="json-editor-wrapper">
+        <div id="json-editor" class="json-editor-container"></div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/jquery/dist/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/moment/min/moment.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/daterangepicker/daterangepicker.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsoneditor/dist/jsoneditor.min.js"></script>
+
+    <script async>
+      const urls = {
+        dev: "https://api.dev.dp.tracksynq.com/v1/data",
+        staging: "http://fmdp-staging.ddnsfree.com:9090/v1/data",
+        production: "https://api.dp.tracksynq.com/v1/data",
+      };
+
+      $(document).ready(function () {
+        // Initialize date range picker
+        $("#startTime, #endTime").daterangepicker({
+          timePicker: true,
+          drops: "auto",
+          singleDatePicker: true,
+          showDropdowns: true,
+          minYear: 1901,
+          maxYear: parseInt(moment().format("YYYY"), 10),
+          locale: {
+            format: "YYYY-MM-DD hh:mm A",
+          },
+        });
+
+        //INITIALIZE TREE VIEW
+        const container = document.getElementById("json-editor");
+        const options = {
+          mode: "view",
+          modes: ["tree", "form", "code", "view"], // You can customize the available modes
+          expandAll: true, // Disable expand and collapse // You can customize the available modes
+        };
+        const editor = new JSONEditor(container, options);
+        editor.set({});
+
+        // Show data when button is clicked
+        $("#showDataBtn").click(function (e) {
+          e.preventDefault();
+          var generatedApi;
+          var env = $("input[name=env]:checked").val();
+          var deviceID = $("#deviceID").val();
+          var options = $("input[name=options]:checked").val();
+          var decode = $("#decode:checked").val();
+          var showLocTime = $("#showLocTime:checked").val();
+          let startTime = moment($("#startTime").val(), "YYYY-MM-DD hh:mm A");
+          let endTime = moment($("#endTime").val(), "YYYY-MM-DD hh:mm A");
+          let timeGap = startTime.diff(endTime, "hours");
+          //Convert to Epoch format
+          startTime = startTime.unix() * 1000;
+          endTime = endTime.unix() * 1000;
+
+          switch (options) {
+            case "processedLatest":
+              generatedApi = `${urls[env]}/formatted/latest/devices/${deviceID}`;
+              break;
+            case "processed":
+              generatedApi = `${urls[env]}/formatted/devices/${deviceID}?end_time=${endTime}&start_time=${startTime}`;
+              break;
+            case "raw":
+              if (decode == "true") {
+                generatedApi = `${urls[env]}/raw/devices/${deviceID}?end_time=${endTime}&start_time=${startTime}&decode=true`;
+                break;
+              }
+              generatedApi = `${urls[env]}/raw/devices/${deviceID}?end_time=${endTime}&start_time=${startTime}`;
+              break;
+            default:
+              break;
+          }
+          // Function to convert a single epoch time field to local time
+          function convertEpochToLocalTime(obj) {
+            if (Array.isArray(obj)) {
+              // If the object is an array, iterate over each element
+              for (var i = 0; i < obj.length; i++) {
+                obj[i] = convertEpochToLocalTime(obj[i]); // Assign the updated element back to the array
+              }
+            } else if (typeof obj === "object" && obj !== null) {
+              // If the object is a nested object, recursively call the function for each property
+              for (var key in obj) {
+                obj[key] = convertEpochToLocalTime(obj[key]); // Assign the updated property back to the object
+              }
+            } else if (typeof obj === "number" && String(obj).length === 13) {
+              // Convert epoch time to local time for numeric values with length 13
+              var localTime = new Date(obj).toLocaleString();
+              return localTime; // Return the updated value
+            }
+            return obj; // Return the original object or array if no modifications are made
+          }
+
+          // Process the data and display it
+          if (timeGap <= 24) {
+            fetch(generatedApi)
+              .then((response) => {
+                return response.json();
+              })
+              .then((res) => {
+                if (showLocTime) {
+                  res = convertEpochToLocalTime(res);
+                  console.log(res);
+                }
+                var prettyJson = JSON.stringify(res, null, 2);
+                var iframeDoc =
+                  $("iframe")[0].contentDocument ||
+                  $("iframe")[0].contentWindow.document;
+                iframeDoc.body.innerHTML = "<pre>" + prettyJson + "</pre>";
+
+                //Tree Structure
+
+                editor.set(res);
+
+                //Table
+                /* var apiTable = $("#apiTable");
+              apiTable.empty(); // Clear existing table data
+
+              // Create table header row
+              var tableHeader = "<tr><th>Key</th><th>Value</th></tr>";
+              apiTable.append(tableHeader);
+
+              // Iterate over the response object and create table rows
+              for (var key in res) {
+                var value = res[key];
+                var apiRow =
+                  "<tr><td>" + key + "</td><td>" + JSON.stringify(value) + "</td></tr>";
+                apiTable.append(apiRow);
+              } */
+              })
+              .catch((e) => {
+                console.log(e);
+              });
+            // Opens in a separate window
+            /* const anchor = document.createElement("a");
+          anchor.href = generatedApi;
+          anchor.target = "_blank";
+          anchor.click(); */
+            //$("iframe").attr("src", generatedApi);
+          } else {
+            alert("Time Range Exceeds 24 Hours");
+          }
+        });
+        // Hide date picker when "processedLatest" is selected
+        $("#processedLatest").click(function () {
+          $("#date-picker").addClass("disable");
+        });
+
+        // Show date picker when other options are selected
+        $("#processedRaw, #raw").click(function () {
+          $("#date-picker").removeClass("disable");
+        });
+      });
+      //Raw Decode field
+      $("#raw").click(function () {
+        $("#decode-wrapper").removeClass("disable");
+      });
+
+      // Show date picker when other options are selected
+      $("#processedRaw, #processedLatest").click(function () {
+        $("#decode-wrapper").addClass("disable");
+      });
+    </script>
+  </body>
+</html>
